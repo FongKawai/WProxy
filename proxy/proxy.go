@@ -4,6 +4,7 @@ import (
 	"WProxy/common"
 	"WProxy/proxy/http"
 	"WProxy/proxy/socks"
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"flag"
@@ -12,18 +13,21 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 
 	"gopkg.in/yaml.v3"
 )
 
+// Config represents the application configuration structure
 type Config struct {
-	ListenAddr  string `yaml:"listen_addr"`
-	Username    string `yaml:"username"`
-	Password    string `yaml:"password"`
+	ListenAddr  string `yaml:"listen_addr"` // Address to listen on (e.g., "0.0.0.0:1080")
+	Username    string `yaml:"username"`    // Username for proxy authentication
+	Password    string `yaml:"password"`    // Password for proxy authentication
 	Certificate struct {
-		Key  string `yaml:"key"`
-		Cert string `yaml:"cert"`
+		Key  string `yaml:"key"`  // Path to TLS certificate key file
+		Cert string `yaml:"cert"` // Path to TLS certificate file
 	} `yaml:"certificate"`
 }
 
@@ -43,13 +47,17 @@ func main() {
 		data, err := os.ReadFile(*configFile)
 		if err != nil {
 			log.Fatalln("Failed to read config file:", err)
-			return
 		}
 		err = yaml.Unmarshal(data, &config)
 		if err != nil {
 			log.Fatalln("Failed to parse config file:", err)
-			return
 		}
+		
+		// Validate configuration
+		if config.ListenAddr == "" {
+			config.ListenAddr = "0.0.0.0:1080"
+		}
+		
 		// Override config with command line arguments if provided
 		if *host != "0.0.0.0" {
 			config.ListenAddr = *host
@@ -71,17 +79,23 @@ func main() {
 		config.Certificate.Key = *certificateKey
 		config.Certificate.Cert = *certificateCert
 	}
+	
+	// Validate that ListenAddr is set
+	if config.ListenAddr == "" {
+		log.Fatalln("Listen address cannot be empty")
+	}
 
 	// Parse listen address
 	hostStr, portStr, err := net.SplitHostPort(config.ListenAddr)
 	if err != nil {
 		log.Fatalln("Invalid listen address:", err)
-		return
 	}
 	portNum, err := strconv.Atoi(portStr)
 	if err != nil {
 		log.Fatalln("Invalid port:", err)
-		return
+	}
+	if portNum < 1 || portNum > 65535 {
+		log.Fatalln("Port number must be between 1 and 65535")
 	}
 
 	listen, err := net.ListenTCP("tcp", &net.TCPAddr{
@@ -90,17 +104,21 @@ func main() {
 	})
 	if err != nil {
 		log.Fatalln("Failed to start TCP proxy:", err)
-		return
 	}
 
 	var urlinfo *url.Userinfo
 	if config.Username != "" && config.Password != "" {
-		fmt.Println("TCP proxy started successfully with credentials:", config.Username, config.Password)
 		urlinfo = url.UserPassword(config.Username, config.Password)
+		fmt.Println("TCP proxy started successfully with authentication enabled")
 	} else {
-		fmt.Println("TCP proxy started successfully without credentials")
+		fmt.Println("TCP proxy started successfully without authentication")
 	}
-	fmt.Println("Listening on", config.ListenAddr, " Port:", portNum, " User:", urlinfo.Username())
+	// Log listening address and username (not password for security)
+	if urlinfo != nil {
+		fmt.Println("Listening on", config.ListenAddr, "Port:", portNum, "User:", urlinfo.Username())
+	} else {
+		fmt.Println("Listening on", config.ListenAddr, "Port:", portNum)
+	}
 
 	// load cert key
 	var cert tls.Certificate
@@ -108,24 +126,38 @@ func main() {
 		cert, err = tls.LoadX509KeyPair(config.Certificate.Cert, config.Certificate.Key)
 		if err != nil {
 			log.Fatalln("Failed to load certificate:", err)
-			return
 		}
 		log.Println("Certificate loaded successfully")
 		cert.Leaf, err = x509.ParseCertificate(cert.Certificate[0])
 		if err != nil {
 			log.Fatalln("Failed to parse certificate:", err)
-			return
 		}
 
-		log.Printf("Certificate Info: Subject: %s, Issuer: %s, NotBefore: %s, NotAfter: %s \n",
+		log.Printf("Certificate Info: Subject: %s, Issuer: %s, NotBefore: %s, NotAfter: %s\n",
 			cert.Leaf.Subject, cert.Leaf.Issuer, cert.Leaf.NotBefore, cert.Leaf.NotAfter)
-
 	}
 
-	handlerTcp(*listen, urlinfo, &cert)
+	// Setup graceful shutdown
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Handle shutdown signals
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	
+	go func() {
+		<-sigChan
+		log.Println("Shutdown signal received, closing server...")
+		cancel()
+		listen.Close()
+	}()
+
+	handlerTcp(*listen, urlinfo, &cert, ctx)
 }
 
-func handlerConn(tcp *net.TCPConn, userinfo *url.Userinfo, cert *tls.Certificate) {
+// handlerConn handles an individual TCP connection by detecting the protocol type
+// and delegating to the appropriate handler (SOCKS5 or HTTP/HTTPS)
+func handlerConn(tcp *net.TCPConn, userinfo *url.Userinfo, cert *tls.Certificate, ctx context.Context) {
 	defer func(tcp *net.TCPConn) {
 		err := tcp.Close()
 		if err != nil {
@@ -168,14 +200,27 @@ func handlerConn(tcp *net.TCPConn, userinfo *url.Userinfo, cert *tls.Certificate
 	}
 }
 
-func handlerTcp(listener net.TCPListener, userinfo *url.Userinfo, cert *tls.Certificate) {
+// handlerTcp accepts and handles incoming TCP connections in a loop
+func handlerTcp(listener net.TCPListener, userinfo *url.Userinfo, cert *tls.Certificate, ctx context.Context) {
 	for {
-		tcp, err := listener.AcceptTCP()
-		if err != nil {
-			fmt.Println("Error accepting TCP connection:", err)
-			continue
+		select {
+		case <-ctx.Done():
+			log.Println("Server shutdown completed")
+			return
+		default:
+			tcp, err := listener.AcceptTCP()
+			if err != nil {
+				// Check if error is due to listener being closed
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					log.Println("Error accepting TCP connection:", err)
+					continue
+				}
+			}
+			log.Println("Accepted TCP connection from", tcp.RemoteAddr().String())
+			go handlerConn(tcp, userinfo, cert, ctx)
 		}
-		log.Println("Accepted TCP connection from ", tcp.RemoteAddr().String())
-		go handlerConn(tcp, userinfo, cert)
 	}
 }

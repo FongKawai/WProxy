@@ -6,16 +6,19 @@ import (
 	"time"
 )
 
+// CloseWriter interface for connections that support half-close
 type CloseWriter interface {
 	CloseWrite() error
 }
 
+// BufConn wraps a net.Conn with buffering capabilities
+// It allows reading data that was previously buffered during protocol detection
 type BufConn struct {
-	Conn         net.Conn
-	buf          []byte
-	isRun        bool
-	bufDataIndex int
-	mu           sync.Mutex
+	Conn         net.Conn  // Underlying network connection
+	buf          []byte    // Internal buffer for storing read data
+	isRun        bool      // Flag indicating if buffering is active
+	bufDataIndex int       // Current position in buffer (unused)
+	mu           sync.Mutex // Mutex for thread-safe operations
 }
 
 // Close closes the connection.
@@ -45,10 +48,13 @@ func (buf *BufConn) SetReadDeadline(t time.Time) error {
 func (buf *BufConn) SetWriteDeadline(t time.Time) error {
 	return buf.Conn.SetWriteDeadline(t)
 }
+
+// Write writes data to the underlying connection
 func (buf *BufConn) Write(b []byte) (int, error) {
 	return buf.Conn.Write(b)
 }
 
+// Read reads data from the connection, using the buffer if available
 func (buf *BufConn) Read(b []byte) (int, error) {
 
 	if buf.isRun {
@@ -83,6 +89,7 @@ func (buf *BufConn) Read(b []byte) (int, error) {
 	}
 }
 
+// CloseWrite closes the write side of the connection if supported
 func (buf *BufConn) CloseWrite() error {
 	if v, ok := buf.Conn.(CloseWriter); ok {
 		return v.CloseWrite()
@@ -90,12 +97,14 @@ func (buf *BufConn) CloseWrite() error {
 	return nil
 }
 
+// Start enables buffering mode for protocol detection
 func (buf *BufConn) Start() {
 	buf.mu.Lock()
 	defer buf.mu.Unlock()
 	buf.isRun = true
 }
 
+// Stop disables buffering mode after protocol detection
 func (buf *BufConn) Stop() {
 	buf.mu.Lock()
 	defer buf.mu.Unlock()

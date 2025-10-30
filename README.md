@@ -143,6 +143,33 @@ sudo systemctl enable wproxy
 sudo systemctl disable wproxy
 ```
 
+# Security Best Practices
+
+When using WProxy in production environments, please follow these security recommendations:
+
+## Authentication
+- Always use strong, randomly-generated passwords (the installer generates one automatically)
+- Change the default username from "admin" to something unique
+- Rotate passwords regularly
+- Never share credentials over insecure channels
+
+## Network Security
+- Use firewall rules to restrict access to the proxy port
+- Consider using TLS/SSL certificates for HTTPS proxy connections
+- Run the proxy behind a reverse proxy with additional security features when possible
+- Monitor access logs for suspicious activity
+
+## Configuration
+- Keep the config file (`/etc/wproxy/config.yaml`) protected with restricted permissions (600)
+- Store certificates securely with appropriate file permissions
+- Regularly update to the latest version to receive security patches
+
+## Production Deployment
+- Run the service with minimal required privileges
+- Enable system logging and monitor for errors
+- Set up automatic restarts on failure (already configured in systemd service)
+- Use connection limits and rate limiting for public-facing deployments
+
 # Contributing
 
 If you find any issues or have suggestions for improvements, feel free to submit an issue or pull request. We're happy to improve WProxy together with the community.

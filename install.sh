@@ -1,9 +1,22 @@
 #!/bin/bash
 
+# Exit on any error
+set -e
+
 # Set color output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
 NC='\033[0m'
+
+# Cleanup function for error handling
+cleanup() {
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}Installation failed. Cleaning up...${NC}"
+        rm -f /tmp/WProxy.tar.gz /tmp/wproxy
+    fi
+}
+trap cleanup EXIT
 
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then 
@@ -33,7 +46,10 @@ CONFIG_DIR="/etc/wproxy"
 echo -e "${GREEN}Starting WProxy installation...${NC}"
 
 # Create config directory
-mkdir -p $CONFIG_DIR
+mkdir -p "$CONFIG_DIR" || {
+    echo -e "${RED}Failed to create config directory${NC}"
+    exit 1
+}
 
 # Download latest version
 echo "Fetching latest version information..."
@@ -100,15 +116,23 @@ echo "Installing..."
 mv /tmp/wproxy $INSTALL_DIR/
 chmod +x $INSTALL_DIR/wproxy
 
-# Generate random password
-RANDOM_PASSWORD=$(openssl rand -base64 12 | tr -d '/+=' | head -c 16)
+# Generate random password (ensure openssl is available)
+if command -v openssl &> /dev/null; then
+    RANDOM_PASSWORD=$(openssl rand -base64 12 | tr -d '/+=' | head -c 16)
+else
+    echo -e "${YELLOW}Warning: openssl not found, using date-based password${NC}"
+    RANDOM_PASSWORD=$(date +%s | sha256sum | base64 | head -c 16)
+fi
 
 # Create config file
-cat > $CONFIG_DIR/config.yaml << EOF
+cat > "$CONFIG_DIR/config.yaml" << EOF
 listen_addr: "0.0.0.0:1080"
 username: "admin"
 password: "${RANDOM_PASSWORD}"
 EOF
+
+# Set proper permissions on config file
+chmod 600 "$CONFIG_DIR/config.yaml"
 
 # Create system service
 cat > /etc/systemd/system/wproxy.service << EOF
@@ -135,12 +159,12 @@ systemctl enable wproxy
 systemctl start wproxy
 
 # Clean up temporary files
-rm -f /tmp/WProxy.tar.gz
+rm -f /tmp/WProxy.tar.gz /tmp/wproxy
 
 echo -e "${GREEN}Installation completed!${NC}"
 echo -e "WProxy installed at: $INSTALL_DIR/wproxy"
 echo -e "Config file location: $CONFIG_DIR/config.yaml"
 echo -e "Default username: admin"
-echo -e "Randomly generated password: ${RANDOM_PASSWORD}"
-echo -e "Please keep your password safe!"
+echo -e "${GREEN}Randomly generated password: ${RANDOM_PASSWORD}${NC}"
+echo -e "${YELLOW}Please keep your password safe!${NC}"
 echo -e "Use the following command to check service status: systemctl status wproxy"

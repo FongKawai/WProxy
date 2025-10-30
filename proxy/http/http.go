@@ -23,19 +23,23 @@ var (
 	ErrAuthFailed   = errors.New("authentication failed: incorrect username or password")
 )
 
-// Conn HttpConn wraps the underlying connection
+// Conn wraps the HTTP proxy connection handling
 type Conn struct {
-	UserInfo *url.Userinfo
-	// Client Conn
-	clientConn net.Conn
-	// Target Conn
-	targetConn net.Conn
+	UserInfo   *url.Userinfo // Authentication credentials
+	clientConn net.Conn      // Client connection
+	targetConn net.Conn      // Target server connection
 }
 
+// HandleConn handles an HTTP/HTTPS proxy connection
+// It supports both regular HTTP requests and CONNECT method for HTTPS tunneling
 func HandleConn(client net.Conn, userinfo *url.Userinfo, cert *tls.Certificate, isTls bool) error {
 	httpConn := Conn{
 		UserInfo: userinfo,
 	}
+	
+	// Set read timeout for initial request to prevent slowloris attacks
+	client.SetReadDeadline(time.Now().Add(30 * time.Second))
+	
 	if isTls {
 		tlsConn := tls.Server(client, &tls.Config{
 			Certificates: []tls.Certificate{*cert},
@@ -55,6 +59,9 @@ func HandleConn(client net.Conn, userinfo *url.Userinfo, cert *tls.Certificate, 
 		return fmt.Errorf("failed to parse HTTP request: %w", err)
 	}
 	defer req.Body.Close()
+	
+	// Clear read deadline after successful request parsing
+	client.SetReadDeadline(time.Time{})
 
 	if httpConn.UserInfo != nil {
 		authHeader := req.Header.Get("Proxy-Authorization")
@@ -104,8 +111,8 @@ func (httpConn *Conn) handleConnect(req *http.Request) error {
 		return err
 	}
 
-	// Connect to target server
-	targetConn, err := net.DialTimeout("tcp", req.Host, 10*time.Second)
+	// Connect to target server with timeout
+	targetConn, err := net.DialTimeout("tcp", req.Host, 30*time.Second)
 	if err != nil {
 		// Return error response
 		errResp := fmt.Sprintf("HTTP/1.1 502 Bad Gateway\r\nContent-Length: %d\r\n\r\n%s",
@@ -132,8 +139,8 @@ func (httpConn *Conn) handleHTTPRequest(req *http.Request) error {
 	if err != nil {
 		return err
 	}
-	// Connect to target server
-	targetConn, err := net.DialTimeout("tcp", req.Host, 10*time.Second)
+	// Connect to target server with timeout
+	targetConn, err := net.DialTimeout("tcp", req.Host, 30*time.Second)
 	if err != nil {
 		errResp := fmt.Sprintf("HTTP/1.1 502 Bad Gateway\r\nContent-Length: %d\r\n\r\n%s",
 			len(err.Error()), err.Error())

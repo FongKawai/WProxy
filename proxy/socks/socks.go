@@ -8,21 +8,25 @@ import (
 	"io"
 	"net"
 	"net/url"
+	"time"
 )
 
+// Socks represents a SOCKS5 proxy connection
 type Socks struct {
 	net.Conn
 	UserInfo *url.Userinfo
 }
 
+// TargetAddr represents the target address information from SOCKS5 request
 type TargetAddr struct {
 	Name    string // Domain name
 	IP      net.IP // IP address
 	Port    int    // Port
-	Command byte   // Command
-	Type    byte   // Type
+	Command byte   // Command (0x01 = CONNECT, 0x02 = BIND, 0x03 = UDP ASSOCIATE)
+	Type    byte   // Address type (0x01 = IPv4, 0x03 = Domain, 0x04 = IPv6)
 }
 
+// Request represents a SOCKS5 request (currently unused)
 type Request struct {
 	Version byte   // Version
 	Name    string // Domain name
@@ -32,7 +36,11 @@ type Request struct {
 	Type    byte   // Type
 }
 
+// Handshake performs the SOCKS5 handshake and handles the connection
 func (s *Socks) Handshake() error {
+	// Set read timeout for initial handshake
+	s.Conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+	
 	// Handle socks version
 	err := s.handleVersion()
 	if err != nil {
@@ -49,20 +57,36 @@ func (s *Socks) Handshake() error {
 	if err != nil {
 		return err
 	}
+	
+	// Clear read deadline after successful handshake
+	s.Conn.SetReadDeadline(time.Time{})
+	
 	// Handle IP request forwarding
 	if targetAddr.Command == 0x01 {
-		dial, err := net.Dial("tcp", fmt.Sprintf("%s:%d", targetAddr.IP.String(), targetAddr.Port))
+		dial, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", targetAddr.IP.String(), targetAddr.Port), 30*time.Second)
 		if err != nil {
 			return err
 		}
-		go io.Copy(s.Conn, dial)
-		io.Copy(dial, s.Conn)
+		defer dial.Close()
+		
+		errCh := make(chan error, 2)
+		go func() {
+			_, err := io.Copy(s.Conn, dial)
+			errCh <- err
+		}()
+		go func() {
+			_, err := io.Copy(dial, s.Conn)
+			errCh <- err
+		}()
+		
+		// Wait for one direction to finish
+		<-errCh
 		return nil
 	}
 	return nil
 }
 
-// Handle socks version
+// handleVersion verifies the SOCKS protocol version
 func (s *Socks) handleVersion() error {
 	verByte := [1]byte{}
 	_, err := s.Conn.Read(verByte[:])
@@ -70,12 +94,12 @@ func (s *Socks) handleVersion() error {
 		return err
 	}
 	if verByte[0] != 0x05 {
-		return errors.New(fmt.Sprintf("invalid socks version %d", verByte[0]))
+		return fmt.Errorf("invalid socks version %d, expected 5", verByte[0])
 	}
 	return nil
 }
 
-// Select authentication method
+// selectAuthMethod handles SOCKS5 authentication method negotiation
 func (s *Socks) selectAuthMethod() error {
 	// Read number of authentication methods
 	methodsByte := make([]byte, 1)
@@ -167,7 +191,7 @@ func (s *Socks) selectAuthMethod() error {
 	return nil
 }
 
-// Receive target address
+// receiveTargetAddress reads and parses the SOCKS5 target address from the client
 func (s *Socks) receiveTargetAddress() (target TargetAddr, err error) {
 	var ret []byte
 	// Read request header
@@ -178,7 +202,7 @@ func (s *Socks) receiveTargetAddress() (target TargetAddr, err error) {
 	}
 	// Check if request header is correct
 	if header[0] != 0x05 {
-		err = errors.New(fmt.Sprintf("unknown socks version:%s", hex.EncodeToString(header[:])))
+		err = fmt.Errorf("unknown socks version: %s", hex.EncodeToString(header[:]))
 		return
 	}
 	ret = append(ret, 0x05)
