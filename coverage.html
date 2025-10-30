@@ -1,0 +1,1054 @@
+
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<title>common: Go Coverage Report</title>
+		<style>
+			body {
+				background: black;
+				color: rgb(80, 80, 80);
+			}
+			body, pre, #legend span {
+				font-family: Menlo, monospace;
+				font-weight: bold;
+			}
+			#topbar {
+				background: black;
+				position: fixed;
+				top: 0; left: 0; right: 0;
+				height: 42px;
+				border-bottom: 1px solid rgb(80, 80, 80);
+			}
+			#content {
+				margin-top: 50px;
+			}
+			#nav, #legend {
+				float: left;
+				margin-left: 10px;
+			}
+			#legend {
+				margin-top: 12px;
+			}
+			#nav {
+				margin-top: 10px;
+			}
+			#legend span {
+				margin: 0 5px;
+			}
+			.cov0 { color: rgb(192, 0, 0) }
+.cov1 { color: rgb(128, 128, 128) }
+.cov2 { color: rgb(116, 140, 131) }
+.cov3 { color: rgb(104, 152, 134) }
+.cov4 { color: rgb(92, 164, 137) }
+.cov5 { color: rgb(80, 176, 140) }
+.cov6 { color: rgb(68, 188, 143) }
+.cov7 { color: rgb(56, 200, 146) }
+.cov8 { color: rgb(44, 212, 149) }
+.cov9 { color: rgb(32, 224, 152) }
+.cov10 { color: rgb(20, 236, 155) }
+
+		</style>
+	</head>
+	<body>
+		<div id="topbar">
+			<div id="nav">
+				<select id="files">
+				
+				<option value="file0">WProxy/common/p_conn.go (69.4%)</option>
+				
+				<option value="file1">WProxy/proxy/forward/forward.go (100.0%)</option>
+				
+				<option value="file2">WProxy/proxy/http/http.go (0.0%)</option>
+				
+				<option value="file3">WProxy/proxy/proxy.go (0.0%)</option>
+				
+				<option value="file4">WProxy/proxy/socks/socks.go (0.0%)</option>
+				
+				</select>
+			</div>
+			<div id="legend">
+				<span>not tracked</span>
+			
+				<span class="cov0">no coverage</span>
+				<span class="cov1">low coverage</span>
+				<span class="cov2">*</span>
+				<span class="cov3">*</span>
+				<span class="cov4">*</span>
+				<span class="cov5">*</span>
+				<span class="cov6">*</span>
+				<span class="cov7">*</span>
+				<span class="cov8">*</span>
+				<span class="cov9">*</span>
+				<span class="cov10">high coverage</span>
+			
+			</div>
+		</div>
+		<div id="content">
+		
+		<pre class="file" id="file0" style="display: none">package common
+
+import (
+        "net"
+        "sync"
+        "time"
+)
+
+// CloseWriter interface for connections that support half-close
+type CloseWriter interface {
+        CloseWrite() error
+}
+
+// BufConn wraps a net.Conn with buffering capabilities
+// It allows reading data that was previously buffered during protocol detection
+type BufConn struct {
+        Conn         net.Conn  // Underlying network connection
+        buf          []byte    // Internal buffer for storing read data
+        isRun        bool      // Flag indicating if buffering is active
+        bufDataIndex int       // Current position in buffer (unused)
+        mu           sync.Mutex // Mutex for thread-safe operations
+}
+
+// Close closes the connection.
+// Any blocked Read or Write operations will be unblocked and return errors.
+func (buf *BufConn) Close() error <span class="cov1" title="1">{
+        return buf.Conn.Close()
+}</span>
+
+// LocalAddr returns the local network address, if known.
+func (buf *BufConn) LocalAddr() net.Addr <span class="cov0" title="0">{
+        return buf.Conn.LocalAddr()
+}</span>
+
+// RemoteAddr returns the remote network address, if known.
+func (buf *BufConn) RemoteAddr() net.Addr <span class="cov0" title="0">{
+        return buf.Conn.RemoteAddr()
+}</span>
+
+func (buf *BufConn) SetDeadline(t time.Time) error <span class="cov0" title="0">{
+        return buf.Conn.SetDeadline(t)
+}</span>
+
+func (buf *BufConn) SetReadDeadline(t time.Time) error <span class="cov0" title="0">{
+        return buf.Conn.SetReadDeadline(t)
+}</span>
+
+func (buf *BufConn) SetWriteDeadline(t time.Time) error <span class="cov0" title="0">{
+        return buf.Conn.SetWriteDeadline(t)
+}</span>
+
+// Write writes data to the underlying connection
+func (buf *BufConn) Write(b []byte) (int, error) <span class="cov1" title="1">{
+        return buf.Conn.Write(b)
+}</span>
+
+// Read reads data from the connection, using the buffer if available
+func (buf *BufConn) Read(b []byte) (int, error) <span class="cov10" title="5">{
+
+        if buf.isRun </span><span class="cov4" title="2">{
+                read, err := buf.Conn.Read(b)
+                if err != nil </span><span class="cov0" title="0">{
+                        return 0, err
+                }</span>
+                <span class="cov4" title="2">buf.buf = append(buf.buf, b[:read]...)
+                return read, err</span>
+        } else<span class="cov7" title="3"> {
+                dstLen := len(b)
+                // Check the size of data to be read
+                cacheLen := len(buf.buf)
+                if cacheLen &gt; 0 </span><span class="cov7" title="3">{
+                        // If there is cached data
+                        if dstLen &gt; len(buf.buf) </span><span class="cov4" title="2">{
+                                i := copy(b, buf.buf)
+                                buf.buf = buf.buf[:0]
+                                read, err := buf.Conn.Read(b[i:])
+                                if err != nil </span><span class="cov0" title="0">{
+                                        return 0, err
+                                }</span>
+                                <span class="cov4" title="2">return i + read, nil</span>
+                        } else<span class="cov1" title="1"> {
+                                i := copy(b, buf.buf[:dstLen])
+                                buf.buf = buf.buf[dstLen:]
+                                return i, nil
+                        }</span>
+                } else<span class="cov0" title="0"> {
+                        return buf.Conn.Read(b)
+                }</span>
+        }
+}
+
+// CloseWrite closes the write side of the connection if supported
+func (buf *BufConn) CloseWrite() error <span class="cov0" title="0">{
+        if v, ok := buf.Conn.(CloseWriter); ok </span><span class="cov0" title="0">{
+                return v.CloseWrite()
+        }</span>
+        <span class="cov0" title="0">return nil</span>
+}
+
+// Start enables buffering mode for protocol detection
+func (buf *BufConn) Start() <span class="cov7" title="3">{
+        buf.mu.Lock()
+        defer buf.mu.Unlock()
+        buf.isRun = true
+}</span>
+
+// Stop disables buffering mode after protocol detection
+func (buf *BufConn) Stop() <span class="cov7" title="3">{
+        buf.mu.Lock()
+        defer buf.mu.Unlock()
+        buf.isRun = false
+}</span>
+</pre>
+		
+		<pre class="file" id="file1" style="display: none">package forward
+
+import (
+        "errors"
+        "net/http"
+        "strings"
+)
+
+// LoopDetected indicates a proxy loop was detected
+var LoopDetected = errors.New("loop detected: proxy loop")
+
+// HandleForward processes HTTP request forwarding and loop detection
+// It supports custom headers (X-Proxy-Host, X-Proxy-Scheme) for request routing
+func HandleForward(req *http.Request) error <span class="cov8" title="6">{
+        // loop check
+        loop := req.Header.Get("x-proxy-loop")
+        if loop != "" </span><span class="cov1" title="1">{
+                return LoopDetected
+        }</span>
+
+        // write loop check
+        <span class="cov7" title="5">req.Header.Set("x-proxy-loop", "1")
+
+        xProxyHost := req.Header.Get("x-proxy-host")
+        if xProxyHost != "" </span><span class="cov5" title="3">{
+
+                newScheme := "https"
+                headerScheme := req.Header.Get("x-proxy-scheme")
+                if headerScheme == "http" </span><span class="cov3" title="2">{
+                        newScheme = "http"
+                }</span>
+
+                // handleHost
+                <span class="cov5" title="3">host := xProxyHost
+                req.Host = handleHost(newScheme, host)
+                req.URL.Scheme = newScheme
+                req.URL.Host = host</span>
+        } else<span class="cov3" title="2"> {
+                req.Host = handleHost(req.URL.Scheme, req.Host)
+                req.URL.Host = req.Host
+        }</span>
+
+        <span class="cov7" title="5">return nil</span>
+}
+
+// handleHost ensures the host string includes a port number
+func handleHost(scheme, host string) string <span class="cov10" title="9">{
+        if !strings.Contains(host, ":") </span><span class="cov8" title="6">{
+                if scheme == "https" </span><span class="cov5" title="3">{
+                        host = host + ":443"
+                }</span> else<span class="cov5" title="3"> {
+                        host = host + ":80"
+                }</span>
+        }
+        <span class="cov10" title="9">return host</span>
+}
+</pre>
+		
+		<pre class="file" id="file2" style="display: none">package http
+
+import (
+        "WProxy/common"
+        "WProxy/proxy/forward"
+        "bufio"
+        "crypto/tls"
+        "encoding/base64"
+        "errors"
+        "fmt"
+        "io"
+        "log"
+        "net"
+        "net/http"
+        "net/url"
+        "strings"
+        "time"
+)
+
+// Error constants
+var (
+        ErrAuthRequired = errors.New("authentication failed: authentication required")
+        ErrAuthFailed   = errors.New("authentication failed: incorrect username or password")
+)
+
+// Conn wraps the HTTP proxy connection handling
+type Conn struct {
+        UserInfo   *url.Userinfo // Authentication credentials
+        clientConn net.Conn      // Client connection
+        targetConn net.Conn      // Target server connection
+}
+
+// HandleConn handles an HTTP/HTTPS proxy connection
+// It supports both regular HTTP requests and CONNECT method for HTTPS tunneling
+func HandleConn(client net.Conn, userinfo *url.Userinfo, cert *tls.Certificate, isTls bool) error <span class="cov0" title="0">{
+        httpConn := Conn{
+                UserInfo: userinfo,
+        }
+        
+        // Set read timeout for initial request to prevent slowloris attacks
+        client.SetReadDeadline(time.Now().Add(30 * time.Second))
+        
+        if isTls </span><span class="cov0" title="0">{
+                tlsConn := tls.Server(client, &amp;tls.Config{
+                        Certificates: []tls.Certificate{*cert},
+                })
+                err := tlsConn.Handshake()
+                if err != nil </span><span class="cov0" title="0">{
+                        return err
+                }</span>
+                <span class="cov0" title="0">httpConn.clientConn = tlsConn</span>
+        } else<span class="cov0" title="0"> {
+                httpConn.clientConn = client
+        }</span>
+
+        <span class="cov0" title="0">reqBufReader := bufio.NewReader(httpConn.clientConn)
+        req, err := http.ReadRequest(reqBufReader)
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("failed to parse HTTP request: %w", err)
+        }</span>
+        <span class="cov0" title="0">defer req.Body.Close()
+        
+        // Clear read deadline after successful request parsing
+        client.SetReadDeadline(time.Time{})
+
+        if httpConn.UserInfo != nil </span><span class="cov0" title="0">{
+                authHeader := req.Header.Get("Proxy-Authorization")
+                if authHeader == "" </span><span class="cov0" title="0">{
+                        username, password, ok := req.BasicAuth()
+                        if ok </span><span class="cov0" title="0">{
+                                authHeader = "Basic " + base64.StdEncoding.EncodeToString([]byte(username+":"+password))
+                        }</span> else<span class="cov0" title="0"> {
+                                authHeader = ""
+                        }</span>
+                }
+                <span class="cov0" title="0">if authHeader == "" </span><span class="cov0" title="0">{
+                        // Return 407 requesting authentication
+                        resp := "HTTP/1.1 407 Proxy Authentication Required\r\n" +
+                                "Proxy-Authenticate: Basic realm=\"Proxy\"\r\n" +
+                                "Content-Length: 0\r\n\r\n"
+                        _, err := httpConn.clientConn.Write([]byte(resp))
+                        if err != nil </span><span class="cov0" title="0">{
+                                return err
+                        }</span>
+                        <span class="cov0" title="0">return ErrAuthRequired</span>
+                }
+
+                <span class="cov0" title="0">user, password, ok := parseBasicAuth(authHeader)
+                if !ok </span><span class="cov0" title="0">{
+                        return ErrAuthFailed
+                }</span>
+
+                <span class="cov0" title="0">expectedPass, _ := httpConn.UserInfo.Password()
+                if user != httpConn.UserInfo.Username() || password != expectedPass </span><span class="cov0" title="0">{
+                        return ErrAuthFailed
+                }</span>
+        }
+
+        <span class="cov0" title="0">if strings.ToUpper(req.Method) == "CONNECT" </span><span class="cov0" title="0">{
+                return httpConn.handleConnect(req)
+        }</span> else<span class="cov0" title="0"> {
+                return httpConn.handleHTTPRequest(req)
+        }</span>
+}
+
+// handleConnect processes CONNECT requests
+func (httpConn *Conn) handleConnect(req *http.Request) error <span class="cov0" title="0">{
+
+        err := forward.HandleForward(req)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        // Connect to target server with timeout
+        <span class="cov0" title="0">targetConn, err := net.DialTimeout("tcp", req.Host, 30*time.Second)
+        if err != nil </span><span class="cov0" title="0">{
+                // Return error response
+                errResp := fmt.Sprintf("HTTP/1.1 502 Bad Gateway\r\nContent-Length: %d\r\n\r\n%s",
+                        len(err.Error()), err.Error())
+                httpConn.clientConn.Write([]byte(errResp))
+                return fmt.Errorf("failed to connect to target server: %w", err)
+        }</span>
+        <span class="cov0" title="0">defer targetConn.Close()
+
+        // Send successful connection response
+        _, err = httpConn.clientConn.Write([]byte(fmt.Sprintf("HTTP/%d.%d 200 Connection established\r\n\r\n", req.ProtoMajor, req.ProtoMinor)))
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("failed to send success response: %w", err)
+        }</span>
+
+        // Bidirectional data copy
+        <span class="cov0" title="0">return tunnelConnection(httpConn.clientConn, targetConn)</span>
+}
+
+// handleHTTPRequest processes regular HTTP requests
+func (httpConn *Conn) handleHTTPRequest(req *http.Request) error <span class="cov0" title="0">{
+
+        err := forward.HandleForward(req)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        // Connect to target server with timeout
+        <span class="cov0" title="0">targetConn, err := net.DialTimeout("tcp", req.Host, 30*time.Second)
+        if err != nil </span><span class="cov0" title="0">{
+                errResp := fmt.Sprintf("HTTP/1.1 502 Bad Gateway\r\nContent-Length: %d\r\n\r\n%s",
+                        len(err.Error()), err.Error())
+                _, err := httpConn.clientConn.Write([]byte(errResp))
+                if err != nil </span><span class="cov0" title="0">{
+                        log.Println("Failed to send error response:", err)
+                        return err
+                }</span>
+                <span class="cov0" title="0">return fmt.Errorf("failed to connect to target server: %w", err)</span>
+        }
+        <span class="cov0" title="0">defer targetConn.Close()
+
+        if req.URL.Scheme == "https" </span><span class="cov0" title="0">{
+                tlsConn := tls.Client(targetConn, &amp;tls.Config{
+                        ServerName: req.URL.Hostname(),
+                })
+                err = tlsConn.Handshake()
+                if err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("failed to perform TLS handshake: %w", err)
+                }</span>
+                <span class="cov0" title="0">targetConn = tlsConn</span>
+        }
+
+        // Modify request to send to target server
+        // req.RequestURI = ""
+        <span class="cov0" title="0">req.Header.Del("Proxy-Authorization")
+        req.Header.Del("Proxy-Connection")
+
+        // Write request to target server
+        err = req.Write(targetConn)
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("failed to send request to target server: %w", err)
+        }</span>
+
+        // Read response from target server and forward to client
+        <span class="cov0" title="0">return tunnelConnection(httpConn.clientConn, targetConn)</span>
+}
+
+// tunnelConnection forwards data bidirectionally between two connections
+func tunnelConnection(client, target net.Conn) error <span class="cov0" title="0">{
+        errCh := make(chan error, 2)
+        go func() </span><span class="cov0" title="0">{
+                _, err := io.Copy(target, client)
+                if closer, ok := target.(common.CloseWriter); ok </span><span class="cov0" title="0">{
+                        _ = closer.CloseWrite()
+                }</span>
+                <span class="cov0" title="0">errCh &lt;- err</span>
+        }()
+
+        <span class="cov0" title="0">go func() </span><span class="cov0" title="0">{
+                _, err := io.Copy(client, target)
+                if closer, ok := target.(common.CloseWriter); ok </span><span class="cov0" title="0">{
+                        _ = closer.CloseWrite()
+                }</span>
+                <span class="cov0" title="0">errCh &lt;- err</span>
+        }()
+
+        // Wait for error or completion in either direction
+        <span class="cov0" title="0">err := &lt;-errCh
+        if err != nil &amp;&amp; !errors.Is(err, io.EOF) </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        // Wait for the other direction to complete
+        <span class="cov0" title="0">err = &lt;-errCh
+        if errors.Is(err, io.EOF) </span><span class="cov0" title="0">{
+                return nil
+        }</span>
+        <span class="cov0" title="0">return err</span>
+}
+
+// parseBasicAuth parses HTTP basic authentication string
+func parseBasicAuth(auth string) (username, password string, ok bool) <span class="cov0" title="0">{
+        const prefix = "Basic "
+        if len(auth) &lt; len(prefix) || !EqualFold(auth[:len(prefix)], prefix) </span><span class="cov0" title="0">{
+                return "", "", false
+        }</span>
+        <span class="cov0" title="0">c, err := base64.StdEncoding.DecodeString(auth[len(prefix):])
+        if err != nil </span><span class="cov0" title="0">{
+                return "", "", false
+        }</span>
+        <span class="cov0" title="0">cs := string(c)
+        username, password, ok = strings.Cut(cs, ":")
+        if !ok </span><span class="cov0" title="0">{
+                return "", "", false
+        }</span>
+        <span class="cov0" title="0">return username, password, true</span>
+}
+
+// EqualFold determines if two strings are equal (case-insensitive)
+func EqualFold(s, t string) bool <span class="cov0" title="0">{
+        if len(s) != len(t) </span><span class="cov0" title="0">{
+                return false
+        }</span>
+        <span class="cov0" title="0">for i := 0; i &lt; len(s); i++ </span><span class="cov0" title="0">{
+                if lower(s[i]) != lower(t[i]) </span><span class="cov0" title="0">{
+                        return false
+                }</span>
+        }
+        <span class="cov0" title="0">return true</span>
+}
+
+// lower returns the lowercase version of a byte
+func lower(b byte) byte <span class="cov0" title="0">{
+        if 'A' &lt;= b &amp;&amp; b &lt;= 'Z' </span><span class="cov0" title="0">{
+                return b + ('a' - 'A')
+        }</span>
+        <span class="cov0" title="0">return b</span>
+}
+</pre>
+		
+		<pre class="file" id="file3" style="display: none">package main
+
+import (
+        "WProxy/common"
+        "WProxy/proxy/http"
+        "WProxy/proxy/socks"
+        "context"
+        "crypto/tls"
+        "crypto/x509"
+        "flag"
+        "fmt"
+        "log"
+        "net"
+        "net/url"
+        "os"
+        "os/signal"
+        "strconv"
+        "syscall"
+
+        "gopkg.in/yaml.v3"
+)
+
+// Config represents the application configuration structure
+type Config struct {
+        ListenAddr  string `yaml:"listen_addr"` // Address to listen on (e.g., "0.0.0.0:1080")
+        Username    string `yaml:"username"`    // Username for proxy authentication
+        Password    string `yaml:"password"`    // Password for proxy authentication
+        Certificate struct {
+                Key  string `yaml:"key"`  // Path to TLS certificate key file
+                Cert string `yaml:"cert"` // Path to TLS certificate file
+        } `yaml:"certificate"`
+}
+
+func main() <span class="cov0" title="0">{
+        host := flag.String("host", "0.0.0.0", "host")
+        port := flag.Int("port", 1080, "port")
+        username := flag.String("username", "", "username")
+        password := flag.String("password", "", "password")
+        certificateKey := flag.String("certificate-key", "", "certificate_key")
+        certificateCert := flag.String("certificate-cert", "", "certificate_cert")
+        configFile := flag.String("c", "", "config file path")
+        flag.Parse()
+
+        var config Config
+        if *configFile != "" </span><span class="cov0" title="0">{
+                // Read config file
+                data, err := os.ReadFile(*configFile)
+                if err != nil </span><span class="cov0" title="0">{
+                        log.Fatalln("Failed to read config file:", err)
+                }</span>
+                <span class="cov0" title="0">err = yaml.Unmarshal(data, &amp;config)
+                if err != nil </span><span class="cov0" title="0">{
+                        log.Fatalln("Failed to parse config file:", err)
+                }</span>
+                
+                // Validate configuration
+                <span class="cov0" title="0">if config.ListenAddr == "" </span><span class="cov0" title="0">{
+                        config.ListenAddr = "0.0.0.0:1080"
+                }</span>
+                
+                // Override config with command line arguments if provided
+                <span class="cov0" title="0">if *host != "0.0.0.0" </span><span class="cov0" title="0">{
+                        config.ListenAddr = *host
+                }</span>
+                <span class="cov0" title="0">if *port != 1080 </span><span class="cov0" title="0">{
+                        config.ListenAddr = fmt.Sprintf("%s:%d", config.ListenAddr, *port)
+                }</span>
+                <span class="cov0" title="0">if *username != "" </span><span class="cov0" title="0">{
+                        config.Username = *username
+                }</span>
+                <span class="cov0" title="0">if *password != "" </span><span class="cov0" title="0">{
+                        config.Password = *password
+                }</span>
+        } else<span class="cov0" title="0"> {
+                // Use command line arguments
+                config.ListenAddr = fmt.Sprintf("%s:%d", *host, *port)
+                config.Username = *username
+                config.Password = *password
+                config.Certificate.Key = *certificateKey
+                config.Certificate.Cert = *certificateCert
+        }</span>
+        
+        // Validate that ListenAddr is set
+        <span class="cov0" title="0">if config.ListenAddr == "" </span><span class="cov0" title="0">{
+                log.Fatalln("Listen address cannot be empty")
+        }</span>
+
+        // Parse listen address
+        <span class="cov0" title="0">hostStr, portStr, err := net.SplitHostPort(config.ListenAddr)
+        if err != nil </span><span class="cov0" title="0">{
+                log.Fatalln("Invalid listen address:", err)
+        }</span>
+        <span class="cov0" title="0">portNum, err := strconv.Atoi(portStr)
+        if err != nil </span><span class="cov0" title="0">{
+                log.Fatalln("Invalid port:", err)
+        }</span>
+        <span class="cov0" title="0">if portNum &lt; 1 || portNum &gt; 65535 </span><span class="cov0" title="0">{
+                log.Fatalln("Port number must be between 1 and 65535")
+        }</span>
+
+        <span class="cov0" title="0">listen, err := net.ListenTCP("tcp", &amp;net.TCPAddr{
+                IP:   net.ParseIP(hostStr),
+                Port: portNum,
+        })
+        if err != nil </span><span class="cov0" title="0">{
+                log.Fatalln("Failed to start TCP proxy:", err)
+        }</span>
+
+        <span class="cov0" title="0">var urlinfo *url.Userinfo
+        if config.Username != "" &amp;&amp; config.Password != "" </span><span class="cov0" title="0">{
+                urlinfo = url.UserPassword(config.Username, config.Password)
+                fmt.Println("TCP proxy started successfully with authentication enabled")
+        }</span> else<span class="cov0" title="0"> {
+                fmt.Println("TCP proxy started successfully without authentication")
+        }</span>
+        // Log listening address and username (not password for security)
+        <span class="cov0" title="0">if urlinfo != nil </span><span class="cov0" title="0">{
+                fmt.Println("Listening on", config.ListenAddr, "Port:", portNum, "User:", urlinfo.Username())
+        }</span> else<span class="cov0" title="0"> {
+                fmt.Println("Listening on", config.ListenAddr, "Port:", portNum)
+        }</span>
+
+        // load cert key
+        <span class="cov0" title="0">var cert tls.Certificate
+        if config.Certificate.Key != "" &amp;&amp; config.Certificate.Cert != "" </span><span class="cov0" title="0">{
+                cert, err = tls.LoadX509KeyPair(config.Certificate.Cert, config.Certificate.Key)
+                if err != nil </span><span class="cov0" title="0">{
+                        log.Fatalln("Failed to load certificate:", err)
+                }</span>
+                <span class="cov0" title="0">log.Println("Certificate loaded successfully")
+                cert.Leaf, err = x509.ParseCertificate(cert.Certificate[0])
+                if err != nil </span><span class="cov0" title="0">{
+                        log.Fatalln("Failed to parse certificate:", err)
+                }</span>
+
+                <span class="cov0" title="0">log.Printf("Certificate Info: Subject: %s, Issuer: %s, NotBefore: %s, NotAfter: %s\n",
+                        cert.Leaf.Subject, cert.Leaf.Issuer, cert.Leaf.NotBefore, cert.Leaf.NotAfter)</span>
+        }
+
+        // Setup graceful shutdown
+        <span class="cov0" title="0">ctx, cancel := context.WithCancel(context.Background())
+        defer cancel()
+
+        // Handle shutdown signals
+        sigChan := make(chan os.Signal, 1)
+        signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+        
+        go func() </span><span class="cov0" title="0">{
+                &lt;-sigChan
+                log.Println("Shutdown signal received, closing server...")
+                cancel()
+                listen.Close()
+        }</span>()
+
+        <span class="cov0" title="0">handlerTcp(*listen, urlinfo, &amp;cert, ctx)</span>
+}
+
+// handlerConn handles an individual TCP connection by detecting the protocol type
+// and delegating to the appropriate handler (SOCKS5 or HTTP/HTTPS)
+func handlerConn(tcp *net.TCPConn, userinfo *url.Userinfo, cert *tls.Certificate, ctx context.Context) <span class="cov0" title="0">{
+        defer func(tcp *net.TCPConn) </span><span class="cov0" title="0">{
+                err := tcp.Close()
+                if err != nil </span><span class="cov0" title="0">{
+                        log.Println("TCP close error:", err)
+                }</span>
+        }(tcp)
+        // Switch Proxy
+        <span class="cov0" title="0">conn := common.BufConn{
+                Conn: tcp,
+        }
+
+        conn.Start()
+
+        buf := [3]byte{}
+        _, err := conn.Read(buf[:])
+        if err != nil </span><span class="cov0" title="0">{
+                log.Printf("Connection to %v failed to detect proxy protocol type: %v\n", tcp.RemoteAddr().String(), err)
+                return
+        }</span>
+        <span class="cov0" title="0">conn.Stop()
+        if buf[0] == 0x05 </span><span class="cov0" title="0">{
+                s := socks.Socks{
+                        Conn:     &amp;conn,
+                        UserInfo: userinfo,
+                }
+                err = s.Handshake()
+                if err != nil </span><span class="cov0" title="0">{
+                        log.Printf("SOCKS handshake error: %v\n", err)
+                        return
+                }</span>
+        } else<span class="cov0" title="0"> {
+
+                tlsResult := buf[0] == 0x16
+
+                err := http.HandleConn(&amp;conn, userinfo, cert, tlsResult)
+                if err != nil </span><span class="cov0" title="0">{
+                        log.Printf("HTTP handshake error: %v\n", err)
+                        return
+                }</span>
+        }
+}
+
+// handlerTcp accepts and handles incoming TCP connections in a loop
+func handlerTcp(listener net.TCPListener, userinfo *url.Userinfo, cert *tls.Certificate, ctx context.Context) <span class="cov0" title="0">{
+        for </span><span class="cov0" title="0">{
+                select </span>{
+                case &lt;-ctx.Done():<span class="cov0" title="0">
+                        log.Println("Server shutdown completed")
+                        return</span>
+                default:<span class="cov0" title="0">
+                        tcp, err := listener.AcceptTCP()
+                        if err != nil </span><span class="cov0" title="0">{
+                                // Check if error is due to listener being closed
+                                select </span>{
+                                case &lt;-ctx.Done():<span class="cov0" title="0">
+                                        return</span>
+                                default:<span class="cov0" title="0">
+                                        log.Println("Error accepting TCP connection:", err)
+                                        continue</span>
+                                }
+                        }
+                        <span class="cov0" title="0">log.Println("Accepted TCP connection from", tcp.RemoteAddr().String())
+                        go handlerConn(tcp, userinfo, cert, ctx)</span>
+                }
+        }
+}
+</pre>
+		
+		<pre class="file" id="file4" style="display: none">package socks
+
+import (
+        "encoding/binary"
+        "encoding/hex"
+        "errors"
+        "fmt"
+        "io"
+        "net"
+        "net/url"
+        "time"
+)
+
+// Socks represents a SOCKS5 proxy connection
+type Socks struct {
+        net.Conn
+        UserInfo *url.Userinfo
+}
+
+// TargetAddr represents the target address information from SOCKS5 request
+type TargetAddr struct {
+        Name    string // Domain name
+        IP      net.IP // IP address
+        Port    int    // Port
+        Command byte   // Command (0x01 = CONNECT, 0x02 = BIND, 0x03 = UDP ASSOCIATE)
+        Type    byte   // Address type (0x01 = IPv4, 0x03 = Domain, 0x04 = IPv6)
+}
+
+// Request represents a SOCKS5 request (currently unused)
+type Request struct {
+        Version byte   // Version
+        Name    string // Domain name
+        IP      net.IP // IP address
+        Port    int    // Port
+        Command byte   // Command
+        Type    byte   // Type
+}
+
+// Handshake performs the SOCKS5 handshake and handles the connection
+func (s *Socks) Handshake() error <span class="cov0" title="0">{
+        // Set read timeout for initial handshake
+        s.Conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+        
+        // Handle socks version
+        err := s.handleVersion()
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        // Select authentication method
+        <span class="cov0" title="0">err = s.selectAuthMethod()
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        // Receive target address
+        <span class="cov0" title="0">targetAddr, err := s.receiveTargetAddress()
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        
+        // Clear read deadline after successful handshake
+        <span class="cov0" title="0">s.Conn.SetReadDeadline(time.Time{})
+        
+        // Handle IP request forwarding
+        if targetAddr.Command == 0x01 </span><span class="cov0" title="0">{
+                dial, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", targetAddr.IP.String(), targetAddr.Port), 30*time.Second)
+                if err != nil </span><span class="cov0" title="0">{
+                        return err
+                }</span>
+                <span class="cov0" title="0">defer dial.Close()
+                
+                errCh := make(chan error, 2)
+                go func() </span><span class="cov0" title="0">{
+                        _, err := io.Copy(s.Conn, dial)
+                        errCh &lt;- err
+                }</span>()
+                <span class="cov0" title="0">go func() </span><span class="cov0" title="0">{
+                        _, err := io.Copy(dial, s.Conn)
+                        errCh &lt;- err
+                }</span>()
+                
+                // Wait for one direction to finish
+                <span class="cov0" title="0">&lt;-errCh
+                return nil</span>
+        }
+        <span class="cov0" title="0">return nil</span>
+}
+
+// handleVersion verifies the SOCKS protocol version
+func (s *Socks) handleVersion() error <span class="cov0" title="0">{
+        verByte := [1]byte{}
+        _, err := s.Conn.Read(verByte[:])
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov0" title="0">if verByte[0] != 0x05 </span><span class="cov0" title="0">{
+                return fmt.Errorf("invalid socks version %d, expected 5", verByte[0])
+        }</span>
+        <span class="cov0" title="0">return nil</span>
+}
+
+// selectAuthMethod handles SOCKS5 authentication method negotiation
+func (s *Socks) selectAuthMethod() error <span class="cov0" title="0">{
+        // Read number of authentication methods
+        methodsByte := make([]byte, 1)
+        _, err := s.Conn.Read(methodsByte)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov0" title="0">methodsLen := int(methodsByte[0])
+        // Read authentication methods
+        methods := make([]byte, methodsLen)
+        _, err = s.Conn.Read(methods)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        // Check if username/password authentication method exists
+        <span class="cov0" title="0">if s.UserInfo != nil </span><span class="cov0" title="0">{
+                auth := false
+                for _, method := range methods </span><span class="cov0" title="0">{
+                        if method == 0x02 </span><span class="cov0" title="0">{
+                                auth = true
+                        }</span>
+                }
+                <span class="cov0" title="0">if !auth </span><span class="cov0" title="0">{
+                        return errors.New("username/password auth not support")
+                }</span>
+                // Select username/password authentication method
+                <span class="cov0" title="0">_, err = s.Conn.Write([]byte{0x05, 0x02})
+                if err != nil </span><span class="cov0" title="0">{
+                        return err
+                }</span>
+                // Read username/password authentication result
+                <span class="cov0" title="0">authResult := make([]byte, 1)
+                _, err = s.Conn.Read(authResult)
+                if err != nil </span><span class="cov0" title="0">{
+                        return err
+                }</span>
+                <span class="cov0" title="0">if authResult[0] != 0x01 </span><span class="cov0" title="0">{
+                        return errors.New("unknown socks auth version")
+                }</span>
+                // Read username length
+                <span class="cov0" title="0">usernameLen := make([]byte, 1)
+                _, err = s.Conn.Read(usernameLen)
+                if err != nil </span><span class="cov0" title="0">{
+                        return err
+                }</span>
+                // Read username
+                <span class="cov0" title="0">username := make([]byte, int(usernameLen[0]))
+                _, err = s.Conn.Read(username)
+                if err != nil </span><span class="cov0" title="0">{
+                        return err
+                }</span>
+                // Read password length
+                <span class="cov0" title="0">passwordLen := make([]byte, 1)
+                _, err = s.Conn.Read(passwordLen)
+                if err != nil </span><span class="cov0" title="0">{
+                        return err
+                }</span>
+                // Read password
+                <span class="cov0" title="0">password := make([]byte, int(passwordLen[0]))
+                _, err = s.Conn.Read(password)
+                if err != nil </span><span class="cov0" title="0">{
+                        return err
+                }</span>
+                <span class="cov0" title="0">usernameStr := string(username)
+                passwordStr := string(password)
+                s2, _ := s.UserInfo.Password()
+                // Verify username/password
+                if s.UserInfo.Username() != usernameStr || s2 != passwordStr </span><span class="cov0" title="0">{
+                        // Verify failed
+                        _, err = s.Conn.Write([]byte{0x01, 0x01})
+                        if err != nil </span><span class="cov0" title="0">{
+                                return err
+                        }</span>
+                        <span class="cov0" title="0">return errors.New("username/password auth failed")</span>
+                } else<span class="cov0" title="0"> {
+                        // Verify succeeded
+                        _, err = s.Conn.Write([]byte{0x01, 0x00})
+                        if err != nil </span><span class="cov0" title="0">{
+                                return err
+                        }</span>
+                }
+        } else<span class="cov0" title="0"> {
+                // Select no authentication method
+                _, err = s.Conn.Write([]byte{0x05, 0x00})
+                if err != nil </span><span class="cov0" title="0">{
+                        return err
+                }</span>
+        }
+        <span class="cov0" title="0">return nil</span>
+}
+
+// receiveTargetAddress reads and parses the SOCKS5 target address from the client
+func (s *Socks) receiveTargetAddress() (target TargetAddr, err error) <span class="cov0" title="0">{
+        var ret []byte
+        // Read request header
+        header := [3]byte{}
+        _, err = s.Conn.Read(header[:])
+        if err != nil </span><span class="cov0" title="0">{
+                return
+        }</span>
+        // Check if request header is correct
+        <span class="cov0" title="0">if header[0] != 0x05 </span><span class="cov0" title="0">{
+                err = fmt.Errorf("unknown socks version: %s", hex.EncodeToString(header[:]))
+                return
+        }</span>
+        <span class="cov0" title="0">ret = append(ret, 0x05)
+        if header[1] != 0x01 </span><span class="cov0" title="0">{
+                err = errors.New("unknown socks cmd")
+                return
+        }</span>
+        <span class="cov0" title="0">target.Command = header[1]
+        ret = append(ret, 0x00)
+        if header[2] != 0x00 </span><span class="cov0" title="0">{
+                err = errors.New("unknown socks rsv")
+                return
+        }</span>
+        <span class="cov0" title="0">ret = append(ret, 0x00)
+        // Read request address type
+        addrTypeByte := make([]byte, 1)
+        _, err = s.Conn.Read(addrTypeByte)
+        if err != nil </span><span class="cov0" title="0">{
+                return
+        }</span>
+        <span class="cov0" title="0">ret = append(ret, addrTypeByte...)
+        target.Type = addrTypeByte[0]
+        switch target.Type </span>{
+        case 0x01:<span class="cov0" title="0">
+                // IPv4
+                addrByte := make([]byte, 4)
+                _, err = s.Conn.Read(addrByte)
+                if err != nil </span><span class="cov0" title="0">{
+                        return
+                }</span>
+                <span class="cov0" title="0">target.IP = net.IPv4(addrByte[0], addrByte[1], addrByte[2], addrByte[3])
+                ret = append(ret, addrByte...)</span>
+        case 0x03:<span class="cov0" title="0">
+                // Domain name
+                addrLenByte := make([]byte, 1)
+                _, err = s.Conn.Read(addrLenByte)
+                if err != nil </span><span class="cov0" title="0">{
+                        return
+                }</span>
+                <span class="cov0" title="0">ret = append(ret, addrLenByte[0])
+                addrLen := int(addrLenByte[0])
+                addrByte := make([]byte, addrLen)
+                _, err = s.Conn.Read(addrByte)
+                if err != nil </span><span class="cov0" title="0">{
+                        return
+                }</span>
+                <span class="cov0" title="0">ret = append(ret, addrByte...)
+                target.Name = string(addrByte)</span>
+        case 0x04:<span class="cov0" title="0">
+                // IPv6
+                addrByte := make([]byte, 16)
+                _, err = s.Conn.Read(addrByte)
+                if err != nil </span><span class="cov0" title="0">{
+                        return
+                }</span>
+                <span class="cov0" title="0">target.IP = net.IP(addrByte)
+                ret = append(ret, addrByte...)</span>
+        default:<span class="cov0" title="0">
+                err = errors.New("unknown socks addr type")
+                return</span>
+        }
+        // Read request port
+        <span class="cov0" title="0">portByte := make([]byte, 2)
+        _, err = s.Conn.Read(portByte)
+        if err != nil </span><span class="cov0" title="0">{
+                return
+        }</span>
+        <span class="cov0" title="0">ret = append(ret, portByte...)
+        // Use built-in function to convert to big endian
+        target.Port = int(binary.BigEndian.Uint16(portByte))
+
+        // Reply client connection success
+        _, err = s.Conn.Write(ret)
+        return</span>
+}
+</pre>
+		
+		</div>
+	</body>
+	<script>
+	(function() {
+		var files = document.getElementById('files');
+		var visible;
+		files.addEventListener('change', onChange, false);
+		function select(part) {
+			if (visible)
+				visible.style.display = 'none';
+			visible = document.getElementById(part);
+			if (!visible)
+				return;
+			files.value = part;
+			visible.style.display = 'block';
+			location.hash = part;
+		}
+		function onChange() {
+			select(files.value);
+			window.scrollTo(0, 0);
+		}
+		if (location.hash != "") {
+			select(location.hash.substr(1));
+		}
+		if (!visible) {
+			select("file0");
+		}
+	})();
+	</script>
+</html>
