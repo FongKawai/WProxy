@@ -113,6 +113,7 @@ func main() {
 	} else {
 		fmt.Println("TCP proxy started successfully without authentication")
 	}
+	// Log listening address and username (not password for security)
 	if urlinfo != nil {
 		fmt.Println("Listening on", config.ListenAddr, "Port:", portNum, "User:", urlinfo.Username())
 	} else {

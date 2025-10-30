@@ -175,7 +175,7 @@ func TestBufConnReadLargeBuffer(t *testing.T) {
 	if err != nil && err != io.EOF {
 		t.Fatalf("Read failed: %v", err)
 	}
-	
+
 	// Should read cached data (5 bytes) plus remaining data (5 bytes) = 10 total
 	expected := "1234567890"
 	if string(buf2[:n]) != expected {
