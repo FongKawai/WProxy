@@ -43,12 +43,10 @@ func main() {
 		data, err := os.ReadFile(*configFile)
 		if err != nil {
 			log.Fatalln("Failed to read config file:", err)
-			return
 		}
 		err = yaml.Unmarshal(data, &config)
 		if err != nil {
 			log.Fatalln("Failed to parse config file:", err)
-			return
 		}
 		// Override config with command line arguments if provided
 		if *host != "0.0.0.0" {
@@ -76,12 +74,13 @@ func main() {
 	hostStr, portStr, err := net.SplitHostPort(config.ListenAddr)
 	if err != nil {
 		log.Fatalln("Invalid listen address:", err)
-		return
 	}
 	portNum, err := strconv.Atoi(portStr)
 	if err != nil {
 		log.Fatalln("Invalid port:", err)
-		return
+	}
+	if portNum < 1 || portNum > 65535 {
+		log.Fatalln("Port number must be between 1 and 65535")
 	}
 
 	listen, err := net.ListenTCP("tcp", &net.TCPAddr{
@@ -90,17 +89,20 @@ func main() {
 	})
 	if err != nil {
 		log.Fatalln("Failed to start TCP proxy:", err)
-		return
 	}
 
 	var urlinfo *url.Userinfo
 	if config.Username != "" && config.Password != "" {
-		fmt.Println("TCP proxy started successfully with credentials:", config.Username, config.Password)
 		urlinfo = url.UserPassword(config.Username, config.Password)
+		fmt.Println("TCP proxy started successfully with authentication enabled")
 	} else {
-		fmt.Println("TCP proxy started successfully without credentials")
+		fmt.Println("TCP proxy started successfully without authentication")
 	}
-	fmt.Println("Listening on", config.ListenAddr, " Port:", portNum, " User:", urlinfo.Username())
+	if urlinfo != nil {
+		fmt.Println("Listening on", config.ListenAddr, "Port:", portNum, "User:", urlinfo.Username())
+	} else {
+		fmt.Println("Listening on", config.ListenAddr, "Port:", portNum)
+	}
 
 	// load cert key
 	var cert tls.Certificate
@@ -108,18 +110,15 @@ func main() {
 		cert, err = tls.LoadX509KeyPair(config.Certificate.Cert, config.Certificate.Key)
 		if err != nil {
 			log.Fatalln("Failed to load certificate:", err)
-			return
 		}
 		log.Println("Certificate loaded successfully")
 		cert.Leaf, err = x509.ParseCertificate(cert.Certificate[0])
 		if err != nil {
 			log.Fatalln("Failed to parse certificate:", err)
-			return
 		}
 
-		log.Printf("Certificate Info: Subject: %s, Issuer: %s, NotBefore: %s, NotAfter: %s \n",
+		log.Printf("Certificate Info: Subject: %s, Issuer: %s, NotBefore: %s, NotAfter: %s\n",
 			cert.Leaf.Subject, cert.Leaf.Issuer, cert.Leaf.NotBefore, cert.Leaf.NotAfter)
-
 	}
 
 	handlerTcp(*listen, urlinfo, &cert)

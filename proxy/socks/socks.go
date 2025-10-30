@@ -55,8 +55,20 @@ func (s *Socks) Handshake() error {
 		if err != nil {
 			return err
 		}
-		go io.Copy(s.Conn, dial)
-		io.Copy(dial, s.Conn)
+		defer dial.Close()
+		
+		errCh := make(chan error, 2)
+		go func() {
+			_, err := io.Copy(s.Conn, dial)
+			errCh <- err
+		}()
+		go func() {
+			_, err := io.Copy(dial, s.Conn)
+			errCh <- err
+		}()
+		
+		// Wait for one direction to finish
+		<-errCh
 		return nil
 	}
 	return nil
@@ -70,7 +82,7 @@ func (s *Socks) handleVersion() error {
 		return err
 	}
 	if verByte[0] != 0x05 {
-		return errors.New(fmt.Sprintf("invalid socks version %d", verByte[0]))
+		return fmt.Errorf("invalid socks version %d, expected 5", verByte[0])
 	}
 	return nil
 }
@@ -178,7 +190,7 @@ func (s *Socks) receiveTargetAddress() (target TargetAddr, err error) {
 	}
 	// Check if request header is correct
 	if header[0] != 0x05 {
-		err = errors.New(fmt.Sprintf("unknown socks version:%s", hex.EncodeToString(header[:])))
+		err = fmt.Errorf("unknown socks version: %s", hex.EncodeToString(header[:]))
 		return
 	}
 	ret = append(ret, 0x05)
