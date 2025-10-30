@@ -6,8 +6,11 @@ import (
 	"strings"
 )
 
+// LoopDetected indicates a proxy loop was detected
 var LoopDetected = errors.New("loop detected: proxy loop")
 
+// HandleForward processes HTTP request forwarding and loop detection
+// It supports custom headers (X-Proxy-Host, X-Proxy-Scheme) for request routing
 func HandleForward(req *http.Request) error {
 	// loop check
 	loop := req.Header.Get("x-proxy-loop")
@@ -40,6 +43,7 @@ func HandleForward(req *http.Request) error {
 	return nil
 }
 
+// handleHost ensures the host string includes a port number
 func handleHost(scheme, host string) string {
 	if !strings.Contains(host, ":") {
 		if scheme == "https" {

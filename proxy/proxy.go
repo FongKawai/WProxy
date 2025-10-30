@@ -17,13 +17,14 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Config represents the application configuration structure
 type Config struct {
-	ListenAddr  string `yaml:"listen_addr"`
-	Username    string `yaml:"username"`
-	Password    string `yaml:"password"`
+	ListenAddr  string `yaml:"listen_addr"` // Address to listen on (e.g., "0.0.0.0:1080")
+	Username    string `yaml:"username"`    // Username for proxy authentication
+	Password    string `yaml:"password"`    // Password for proxy authentication
 	Certificate struct {
-		Key  string `yaml:"key"`
-		Cert string `yaml:"cert"`
+		Key  string `yaml:"key"`  // Path to TLS certificate key file
+		Cert string `yaml:"cert"` // Path to TLS certificate file
 	} `yaml:"certificate"`
 }
 
@@ -124,6 +125,8 @@ func main() {
 	handlerTcp(*listen, urlinfo, &cert)
 }
 
+// handlerConn handles an individual TCP connection by detecting the protocol type
+// and delegating to the appropriate handler (SOCKS5 or HTTP/HTTPS)
 func handlerConn(tcp *net.TCPConn, userinfo *url.Userinfo, cert *tls.Certificate) {
 	defer func(tcp *net.TCPConn) {
 		err := tcp.Close()
@@ -167,6 +170,7 @@ func handlerConn(tcp *net.TCPConn, userinfo *url.Userinfo, cert *tls.Certificate
 	}
 }
 
+// handlerTcp accepts and handles incoming TCP connections in a loop
 func handlerTcp(listener net.TCPListener, userinfo *url.Userinfo, cert *tls.Certificate) {
 	for {
 		tcp, err := listener.AcceptTCP()
