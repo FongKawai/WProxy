@@ -4,6 +4,7 @@ import (
 	"WProxy/common"
 	"WProxy/proxy/http"
 	"WProxy/proxy/socks"
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"flag"
@@ -12,7 +13,9 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 
 	"gopkg.in/yaml.v3"
 )
@@ -49,6 +52,12 @@ func main() {
 		if err != nil {
 			log.Fatalln("Failed to parse config file:", err)
 		}
+		
+		// Validate configuration
+		if config.ListenAddr == "" {
+			config.ListenAddr = "0.0.0.0:1080"
+		}
+		
 		// Override config with command line arguments if provided
 		if *host != "0.0.0.0" {
 			config.ListenAddr = *host
@@ -69,6 +78,11 @@ func main() {
 		config.Password = *password
 		config.Certificate.Key = *certificateKey
 		config.Certificate.Cert = *certificateCert
+	}
+	
+	// Validate that ListenAddr is set
+	if config.ListenAddr == "" {
+		log.Fatalln("Listen address cannot be empty")
 	}
 
 	// Parse listen address
@@ -122,12 +136,27 @@ func main() {
 			cert.Leaf.Subject, cert.Leaf.Issuer, cert.Leaf.NotBefore, cert.Leaf.NotAfter)
 	}
 
-	handlerTcp(*listen, urlinfo, &cert)
+	// Setup graceful shutdown
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Handle shutdown signals
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	
+	go func() {
+		<-sigChan
+		log.Println("Shutdown signal received, closing server...")
+		cancel()
+		listen.Close()
+	}()
+
+	handlerTcp(*listen, urlinfo, &cert, ctx)
 }
 
 // handlerConn handles an individual TCP connection by detecting the protocol type
 // and delegating to the appropriate handler (SOCKS5 or HTTP/HTTPS)
-func handlerConn(tcp *net.TCPConn, userinfo *url.Userinfo, cert *tls.Certificate) {
+func handlerConn(tcp *net.TCPConn, userinfo *url.Userinfo, cert *tls.Certificate, ctx context.Context) {
 	defer func(tcp *net.TCPConn) {
 		err := tcp.Close()
 		if err != nil {
@@ -171,14 +200,26 @@ func handlerConn(tcp *net.TCPConn, userinfo *url.Userinfo, cert *tls.Certificate
 }
 
 // handlerTcp accepts and handles incoming TCP connections in a loop
-func handlerTcp(listener net.TCPListener, userinfo *url.Userinfo, cert *tls.Certificate) {
+func handlerTcp(listener net.TCPListener, userinfo *url.Userinfo, cert *tls.Certificate, ctx context.Context) {
 	for {
-		tcp, err := listener.AcceptTCP()
-		if err != nil {
-			fmt.Println("Error accepting TCP connection:", err)
-			continue
+		select {
+		case <-ctx.Done():
+			log.Println("Server shutdown completed")
+			return
+		default:
+			tcp, err := listener.AcceptTCP()
+			if err != nil {
+				// Check if error is due to listener being closed
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					log.Println("Error accepting TCP connection:", err)
+					continue
+				}
+			}
+			log.Println("Accepted TCP connection from", tcp.RemoteAddr().String())
+			go handlerConn(tcp, userinfo, cert, ctx)
 		}
-		log.Println("Accepted TCP connection from ", tcp.RemoteAddr().String())
-		go handlerConn(tcp, userinfo, cert)
 	}
 }
