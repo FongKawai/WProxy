@@ -50,20 +50,50 @@ curl -s https://raw.githubusercontent.com/Wenpiner/WProxy/main/uninstall.sh | su
 
 ## 手动安装
 
-如果您想手动安装，可以按照以下步骤操作：
+适用于 Windows、macOS，或未使用一键脚本的 Linux：
 
-1. 从 GitHub 仓库下载最新版本的 WProxy 二进制文件
-2. 将下载的文件解压缩到您的系统中
-3. 在命令行中运行 `./wproxy` 命令启动代理服务器
+1. 从 [GitHub Releases](https://github.com/Wenpiner/WProxy/releases) 下载对应平台的二进制文件（Windows 为 `wproxy.exe`）
+2. 解压到任意目录
+3. 使用配置文件或命令行参数启动（见下方「配置」）
 
 # 配置
 
-配置文件位于 `/etc/wproxy/config.yaml`，您可以根据需要进行以下设置：
+## 配置文件位置
 
-- listen_addr: 代理服务器的监听地址，默认为 0.0.0.0:1080
-- username 和 password: 身份验证所需的用户名和密码
+| 平台 | 默认配置文件路径 | 说明 |
+|------|------------------|------|
+| Linux（`install.sh` 安装） | `/etc/wproxy/config.yaml` | 安装脚本自动创建，systemd 以 `-c` 加载 |
+| Windows / macOS / 手动安装 | 无内置默认路径 | 需自行创建 YAML，启动时用 `-c` 指定；或完全不使用配置文件 |
 
-默认配置：
+Windows 示例（配置文件与程序同目录）：
+
+```powershell
+.\wproxy.exe -c .\config.yaml
+```
+
+## 配置文件选项（YAML）
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `listen_addr` | 字符串 | `0.0.0.0:1080` | 监听地址，格式为 `host:port` |
+| `username` | 字符串 | 空 | 代理鉴权用户名；须与 `password` 同时非空才启用鉴权 |
+| `password` | 字符串 | 空 | 代理鉴权密码 |
+| `certificate.key` | 字符串 | 空 | TLS 私钥文件路径（可选） |
+| `certificate.cert` | 字符串 | 空 | TLS 证书文件路径（可选） |
+
+完整配置示例：
+
+```yaml
+listen_addr: "0.0.0.0:1080"
+username: "admin"
+password: "your_strong_password"
+certificate:
+  key: "/path/to/key.pem"
+  cert: "/path/to/cert.pem"
+```
+
+Linux 一键安装后的默认配置（不含 `certificate`）：
+
 ```yaml
 listen_addr: "0.0.0.0:1080"
 username: "admin"
@@ -71,16 +101,44 @@ password: "16位随机密码"  # 安装时自动生成
 ```
 
 注意事项：
-1. 安装时会自动生成一个随机的16位密码
-2. 安装完成后会显示生成的密码，请务必妥善保管
-3. 如需修改密码，请编辑配置文件后重启服务
+
+1. Linux 一键安装时会自动生成 16 位随机密码，安装结束会在终端显示，请妥善保管
+2. 修改配置后需重启进程或服务（`systemctl restart wproxy`）
+3. 使用 `-c` 时，`certificate` 须在 YAML 中配置；命令行 `-certificate-key` / `-certificate-cert` 仅在**未**使用 `-c` 时生效
+
+## 命令行参数
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `-c` | 空 | 配置文件路径 |
+| `-host` | `0.0.0.0` | 监听主机（未使用 `-c` 时与 `-port` 组成监听地址） |
+| `-port` | `1080` | 监听端口（1–65535） |
+| `-username` | 空 | 鉴权用户名 |
+| `-password` | 空 | 鉴权密码 |
+| `-certificate-key` | 空 | TLS 私钥路径（仅在不使用 `-c` 时） |
+| `-certificate-cert` | 空 | TLS 证书路径（仅在不使用 `-c` 时） |
+
+使用 `-c` 时，命令行中的 `-host`、`-port`、`-username`、`-password` 可在非默认值时覆盖配置文件对应项。
+
+启动示例：
+
+```bash
+# 使用配置文件（Linux 安装路径）
+wproxy -c /etc/wproxy/config.yaml
+
+# 不使用配置文件，直接指定参数
+wproxy -host 127.0.0.1 -port 7890 -username admin -password secret
+
+# 指定 TLS 证书（无配置文件）
+wproxy -host 0.0.0.0 -port 1080 -certificate-cert cert.pem -certificate-key key.pem
+```
 
 # 使用
 
 - 将您的应用程序或浏览器配置为使用 WProxy 作为代理服务器
 - 输入代理服务器的地址和端口，以及身份验证所需的用户名和密码（如果已启用）
 - 开始通过代理服务器访问互联网
-- 如果需要通过 HTTP/HTTPS 请求头指定目标域名或 IP 进行转发，请在请求头中添加 `X-Proxy-Host`、`X-Proxy-Scheme` 和 `X-Proxy-Secret` 字段。例如：
+- 如果需要通过 HTTP/HTTPS 请求头指定目标域名或 IP 进行转发，请在请求头中添加 `X-Proxy-Host`、`X-Proxy-Scheme`；访问代理本身若已启用鉴权，还需 `Proxy-Authorization`（Basic 认证）。例如：
   ### 无鉴权、HTTP 转发
   ```http
   GET /xxx/xxx HTTP/1.1
@@ -116,7 +174,9 @@ password: "16位随机密码"  # 安装时自动生成
 
   代理服务器会根据这些字段将请求转发到指定的目标地址和端口。
 ### ⚠️ 注意事项
-1. `Proxy-Authorization`对应就是`BasicAuth`认证方式，如果没有设置密码，则不需要设置该字段。
+1. `Proxy-Authorization` 为访问 **WProxy 代理** 的 Basic 认证，与 `X-Proxy-Host` 指定的转发目标无关
+2. 未配置 `username` / `password`（或二者任一为空）时，代理无鉴权，无需设置 `Proxy-Authorization`
+3. 代理内部会自动设置 `X-Proxy-Loop` 防止环路，客户端一般无需手动添加
 
 # 服务管理
 
@@ -159,7 +219,7 @@ sudo systemctl disable wproxy
 - 监控访问日志以发现可疑活动
 
 ## 配置安全
-- 保持配置文件 (`/etc/wproxy/config.yaml`) 的受限权限 (600)
+- 保持配置文件权限受限（Linux 安装路径建议 `chmod 600 /etc/wproxy/config.yaml`）
 - 安全存储证书并设置适当的文件权限
 - 定期更新到最新版本以获取安全补丁
 

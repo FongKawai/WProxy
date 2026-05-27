@@ -51,20 +51,50 @@ The uninstallation script will automatically:
 
 ## Manual Installation
 
-If you prefer to install manually, follow these steps:
+For Windows, macOS, or Linux without the install script:
 
-1. Download the latest WProxy binary from the GitHub repository
-2. Extract the downloaded file to your system
-3. Run the `./wproxy` command in the terminal to start the proxy server
+1. Download the binary for your platform from [GitHub Releases](https://github.com/Wenpiner/WProxy/releases) (`wproxy.exe` on Windows)
+2. Extract to any directory
+3. Start with a config file or command-line flags (see **Configuration** below)
 
 # Configuration
 
-The configuration file is located at `/etc/wproxy/config.yaml`. You can configure the following settings:
+## Config file location
 
-- listen_addr: The listening address of the proxy server, default is 0.0.0.0:1080
-- username and password: The credentials required for authentication
+| Platform | Default config path | Notes |
+|----------|---------------------|-------|
+| Linux (`install.sh`) | `/etc/wproxy/config.yaml` | Created by the installer; systemd starts with `-c` |
+| Windows / macOS / manual install | None | Create your own YAML and pass `-c`, or use CLI flags only |
 
-Default configuration:
+Windows example (config next to the binary):
+
+```powershell
+.\wproxy.exe -c .\config.yaml
+```
+
+## Config file options (YAML)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `listen_addr` | string | `0.0.0.0:1080` | Listen address as `host:port` |
+| `username` | string | empty | Proxy auth username; auth is enabled only when both `username` and `password` are set |
+| `password` | string | empty | Proxy auth password |
+| `certificate.key` | string | empty | TLS private key path (optional) |
+| `certificate.cert` | string | empty | TLS certificate path (optional) |
+
+Full example:
+
+```yaml
+listen_addr: "0.0.0.0:1080"
+username: "admin"
+password: "your_strong_password"
+certificate:
+  key: "/path/to/key.pem"
+  cert: "/path/to/cert.pem"
+```
+
+Default after Linux one-click install (no `certificate`):
+
 ```yaml
 listen_addr: "0.0.0.0:1080"
 username: "admin"
@@ -72,16 +102,44 @@ password: "16-character random password"  # Automatically generated during insta
 ```
 
 Notes:
-1. A random 16-character password is automatically generated during installation
-2. The generated password will be displayed after installation, please keep it safe
-3. To change the password, edit the configuration file and restart the service
+
+1. The Linux installer generates a random 16-character password and prints it when finished
+2. Restart the process or service after changing config (`systemctl restart wproxy`)
+3. With `-c`, set `certificate` in YAML; `-certificate-key` / `-certificate-cert` apply only when **not** using `-c`
+
+## Command-line flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-c` | empty | Path to config file |
+| `-host` | `0.0.0.0` | Listen host (combined with `-port` when not using `-c`) |
+| `-port` | `1080` | Listen port (1–65535) |
+| `-username` | empty | Auth username |
+| `-password` | empty | Auth password |
+| `-certificate-key` | empty | TLS key path (without `-c` only) |
+| `-certificate-cert` | empty | TLS cert path (without `-c` only) |
+
+With `-c`, non-default `-host`, `-port`, `-username`, and `-password` override the config file.
+
+Examples:
+
+```bash
+# Config file (Linux install path)
+wproxy -c /etc/wproxy/config.yaml
+
+# No config file
+wproxy -host 127.0.0.1 -port 7890 -username admin -password secret
+
+# TLS via CLI (no config file)
+wproxy -host 0.0.0.0 -port 1080 -certificate-cert cert.pem -certificate-key key.pem
+```
 
 # Usage
 
 - Configure your applications or browsers to use WProxy as a proxy server
 - Enter the proxy server's address, port, and authentication credentials (if enabled)
 - Start browsing the internet through the proxy server
-- If you need to forward to target domains or IPs specified in HTTP/HTTPS headers, add the `X-Proxy-Host`, `X-Proxy-Scheme`, and `X-Proxy-Secret` fields to the request headers. For example:
+- To forward to a target domain or IP via HTTP/HTTPS headers, set `X-Proxy-Host` and `X-Proxy-Scheme`. If proxy authentication is enabled, also send `Proxy-Authorization` (Basic auth). For example:
   ### Unauthenticated HTTP forwarding
   ```http
   GET /xxx/xxx HTTP/1.1
@@ -111,13 +169,15 @@ Notes:
   Host: example.com
   X-Proxy-Host: target-domain.com:8443
   X-Proxy-Scheme: https
-  X-Proxy-Secret: your_password
+  Proxy-Authorization: your_password
   ```
 
   The proxy server will forward the request to the specified target address and port based on these fields.
 
 ### ⚠️ Notes
-1. `Proxy-Authorization` corresponds to the `BasicAuth` authentication method. If no password is set, this field is not required.
+1. `Proxy-Authorization` authenticates access to **WProxy**, not the host in `X-Proxy-Host`
+2. If `username` / `password` are unset (or either is empty), the proxy has no auth and `Proxy-Authorization` is not required
+3. The proxy sets `X-Proxy-Loop` internally to prevent loops; clients usually do not need to set it
 
 # Service Management
 
@@ -160,7 +220,7 @@ When using WProxy in production environments, please follow these security recom
 - Monitor access logs for suspicious activity
 
 ## Configuration
-- Keep the config file (`/etc/wproxy/config.yaml`) protected with restricted permissions (600)
+- Restrict config file permissions (Linux install path: `chmod 600 /etc/wproxy/config.yaml`)
 - Store certificates securely with appropriate file permissions
 - Regularly update to the latest version to receive security patches
 
